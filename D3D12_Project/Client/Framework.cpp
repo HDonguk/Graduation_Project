@@ -143,7 +143,7 @@ void Framework::OnUpdate(GameTimer& gTimer)
             if (networkManager.IsRunning() && networkManager.IsLoggedIn()) {
                 static float networkTimer = 0.0f;
                 networkTimer += gTimer.DeltaTime();
-                if (networkTimer >= 0.2f) {  // 200ms마다 업데이트 (빈도 감소)
+                if (networkTimer >= 0.5f) {  // 500ms마다 업데이트 (네트워크 부하 감소)
                     auto& player = m_scenes[L"BaseScene"].GetObj<PlayerObject>(L"PlayerObject");
                     auto& position = player.GetComponent<Position>();
                     auto& rotation = player.GetComponent<Rotation>();

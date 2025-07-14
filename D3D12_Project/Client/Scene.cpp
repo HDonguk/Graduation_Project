@@ -727,20 +727,24 @@ void Scene::OnUpdate(GameTimer& gTimer)
         m_tigerInterpolationData.erase(tigerID);
     }
     
-    // 메모리 사용량 모니터링 (10초마다)
+    // 메모리 사용량 모니터링 (30초마다, 로그 출력 최소화)
     static float memoryCheckTimer = 0.0f;
     memoryCheckTimer += deltaTime;
-    if (memoryCheckTimer >= 10.0f) {
+    if (memoryCheckTimer >= 30.0f) {
         memoryCheckTimer = 0.0f;
         
-        // 메모리 사용량 확인
+        // 메모리 사용량 확인 (80% 초과 시에만 경고)
         PROCESS_MEMORY_COUNTERS_EX pmc;
         if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
             float memoryUsageMB = static_cast<float>(pmc.WorkingSetSize) / (1024.0f * 1024.0f);
-            char buffer[256];
-            sprintf_s(buffer, "[Memory] Usage: %.1f MB, Objects: %zu, Interpolation Data: %zu", 
-                memoryUsageMB, m_objects.size(), m_tigerInterpolationData.size());
-            NetworkManager::LogToFile(buffer);
+            float memoryUsagePercent = (memoryUsageMB / 16057.0f) * 100.0f; // 16GB 기준
+            
+            if (memoryUsagePercent > 80.0f) {
+                char buffer[256];
+                sprintf_s(buffer, "[Memory] High usage: %.1f%% (%.1f MB), Objects: %zu", 
+                    memoryUsagePercent, memoryUsageMB, m_objects.size());
+                NetworkManager::LogToFile(buffer);
+            }
         }
     }
     

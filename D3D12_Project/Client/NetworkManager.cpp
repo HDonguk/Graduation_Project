@@ -259,8 +259,16 @@ DWORD WINAPI NetworkManager::NetworkThread(LPVOID arg) {
                     break;  // 완전한 패킷이 없음
                 }
 
-                // 패킷 처리
-                network->ProcessPacket(network->m_packetBuffer + processedBytes);
+                // 패킷 처리 (안전한 접근)
+                try {
+                    network->ProcessPacket(network->m_packetBuffer + processedBytes);
+                } catch (const std::exception& e) {
+                    // 패킷 처리 중 예외 발생 시 무시하고 계속 진행
+                    network->LogToFile("[Error] Exception during packet processing: " + std::string(e.what()));
+                } catch (...) {
+                    // 패킷 처리 중 예외 발생 시 무시하고 계속 진행
+                    network->LogToFile("[Error] Unknown exception during packet processing");
+                }
                 processedBytes += header->size;
             }
 
@@ -400,27 +408,32 @@ void NetworkManager::SendPlayerUpdate(float x, float y, float z, float rotY) {
 
 void NetworkManager::ProcessPacket(char* buffer) {
     PacketHeader* header = (PacketHeader*)buffer;
-    LogToFile("[ProcessPacket] Starting to process packet type: " + std::to_string(header->type));
+    // 패킷 처리 시작 로그 제거 (로그 출력 최소화)
 
-    // 메모리 사용량 모니터링
+    // 메모리 사용량 모니터링 (최적화)
     static int packetCount = 0;
     packetCount++;
-    if (packetCount % 10 == 0) {  // 10개 패킷마다 메모리 상태 체크
-        MEMORYSTATUSEX memInfo;
-        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-        if (GlobalMemoryStatusEx(&memInfo)) {
-            DWORDLONG usedMemory = memInfo.ullTotalPhys - memInfo.ullAvailPhys;
-            DWORDLONG totalMemory = memInfo.ullTotalPhys;
-            double memoryUsagePercent = (double)usedMemory / totalMemory * 100.0;
-            
-            char memBuffer[256];
-            sprintf_s(memBuffer, "[Memory] Usage: %.1f%% (%llu MB / %llu MB)", 
-                memoryUsagePercent, usedMemory / (1024*1024), totalMemory / (1024*1024));
-            LogToFile(memBuffer);
-            
-            if (memoryUsagePercent > 90.0) {
-                LogToFile("[Warning] High memory usage detected!");
+    if (packetCount % 50 == 0) {  // 50개 패킷마다 메모리 상태 체크 (빈도 감소)
+        try {
+            MEMORYSTATUSEX memInfo;
+            memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+            if (GlobalMemoryStatusEx(&memInfo)) {
+                DWORDLONG usedMemory = memInfo.ullTotalPhys - memInfo.ullAvailPhys;
+                DWORDLONG totalMemory = memInfo.ullTotalPhys;
+                if (totalMemory > 0) {
+                    double memoryUsagePercent = (double)usedMemory / totalMemory * 100.0;
+                    
+                    // 85% 초과 시에만 경고
+                    if (memoryUsagePercent > 85.0) {
+                        char memBuffer[256];
+                        sprintf_s(memBuffer, "[Memory] High usage: %.1f%% (%llu MB)", 
+                            memoryUsagePercent, usedMemory / (1024*1024));
+                        LogToFile(memBuffer);
+                    }
+                }
             }
+        } catch (...) {
+            // 메모리 상태 확인 실패 시 무시
         }
     }
 
@@ -649,36 +662,8 @@ void NetworkManager::Shutdown() {
 }
 
 void NetworkManager::LogToFile(const std::string& message) {
-    // 로그 기록 비활성화
-    
-    static bool logFailureReported = false;
-    
-    std::lock_guard<std::mutex> lock(m_logMutex);
-    try {
-        if (!m_logFile.is_open()) {
-            if (!logFailureReported) {
-                std::cerr << "Log file is not open" << std::endl;
-                logFailureReported = true;
-            }
-            return;
-        }
-        
-        time_t now = time(0);
-        tm ltm;
-        localtime_s(&ltm, &now);
-        char timestamp[50];
-        sprintf_s(timestamp, "[%02d:%02d:%02d] ", ltm.tm_hour, ltm.tm_min, ltm.tm_sec);
-        
-        m_logFile << timestamp << message << std::endl;
-        m_logFile.flush();
-    }
-    catch (const std::exception& e) {
-        if (!logFailureReported) {
-            std::cerr << "Failed to write to log file: " << e.what() << std::endl;
-            logFailureReported = true;
-        }
-    }
-    
+    // 로그 기록 완전 비활성화 (클라이언트 안정성 향상)
+    return;
 }
 
 void NetworkManager::Update(GameTimer& gTimer, Scene* scene) {
@@ -701,7 +686,7 @@ void NetworkManager::Update(GameTimer& gTimer, Scene* scene) {
     auto& rotation = player.GetComponent<Rotation>();
     
     m_updateTimer += gTimer.DeltaTime();
-    const float UPDATE_INTERVAL = 0.1f;  // 100ms마다 업데이트
+    const float UPDATE_INTERVAL = 0.5f;  // 500ms마다 업데이트 (네트워크 부하 감소)
 
     if (m_updateTimer >= UPDATE_INTERVAL) {
         SendPlayerUpdate(

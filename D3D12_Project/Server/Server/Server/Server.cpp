@@ -692,7 +692,7 @@ void GameServer::InitializeTigers() {
 
 void GameServer::UpdateTigers(float deltaTime) {
     m_tigerUpdateTimer += deltaTime;
-    if (m_tigerUpdateTimer < 0.1f) return; // 100ms마다 업데이트 (더 자주 업데이트)
+    if (m_tigerUpdateTimer < 0.1f) return; // 100ms마다 업데이트 (더 부드러운 움직임)
 
     for (auto& [id, tiger] : m_tigers) {
         UpdateTigerBehavior(tiger, deltaTime); // deltaTime 사용으로 수정
@@ -762,7 +762,7 @@ void GameServer::BroadcastTigerUpdates() {
     static int updateCounter = 0;
     updateCounter++;
     
-    // 2번 중 1번 업데이트 전송 (더 자주 전송)
+    // 2번 중 1번 업데이트 전송 (더 부드러운 움직임)
     if (updateCounter % 2 != 0) {
         return;
     }
