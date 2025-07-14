@@ -7,6 +7,7 @@
 #include "OtherPlayerManager.h"
 #include "Framework.h"
 #include <array>
+#include <psapi.h>
 
 Scene::Scene(Framework* parent, UINT width, UINT height, std::wstring name) :
     m_parent{ parent },
@@ -691,6 +692,8 @@ void Scene::OnUpdate(GameTimer& gTimer)
     
     // 호랑이 보간 업데이트
     float deltaTime = gTimer.DeltaTime();
+    std::vector<int> completedTigers;
+    
     for (auto& [tigerID, interpData] : m_tigerInterpolationData) {
         wstring objectName = L"NetworkTiger_" + std::to_wstring(tigerID);
         if (m_objects.find(objectName) != m_objects.end()) {
@@ -708,9 +711,40 @@ void Scene::OnUpdate(GameTimer& gTimer)
             // 실제 위치와 회전 업데이트
             tiger.GetComponent<Position>().SetXMVECTOR(XMVectorSet(newX, newY, newZ, 1.0f));
             tiger.GetComponent<Rotation>().SetXMVECTOR(XMVectorSet(0.0f, newRotY, 0.0f, 0.0f));
+            
+            // 보간이 완료되면 정리 대상에 추가
+            if (t >= 1.0f) {
+                completedTigers.push_back(tigerID);
+            }
+        } else {
+            // 객체가 존재하지 않으면 보간 데이터도 정리
+            completedTigers.push_back(tigerID);
         }
     }
-     m_shadow->UpdateShadow();
+    
+    // 완료된 보간 데이터 정리
+    for (int tigerID : completedTigers) {
+        m_tigerInterpolationData.erase(tigerID);
+    }
+    
+    // 메모리 사용량 모니터링 (10초마다)
+    static float memoryCheckTimer = 0.0f;
+    memoryCheckTimer += deltaTime;
+    if (memoryCheckTimer >= 10.0f) {
+        memoryCheckTimer = 0.0f;
+        
+        // 메모리 사용량 확인
+        PROCESS_MEMORY_COUNTERS_EX pmc;
+        if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+            float memoryUsageMB = static_cast<float>(pmc.WorkingSetSize) / (1024.0f * 1024.0f);
+            char buffer[256];
+            sprintf_s(buffer, "[Memory] Usage: %.1f MB, Objects: %zu, Interpolation Data: %zu", 
+                memoryUsageMB, m_objects.size(), m_tigerInterpolationData.size());
+            NetworkManager::LogToFile(buffer);
+        }
+    }
+    
+    m_shadow->UpdateShadow();
     memcpy(static_cast<UINT8*>(m_mappedData) + sizeof(XMMATRIX), &XMMatrixTranspose(XMLoadFloat4x4(&m_proj)), sizeof(XMMATRIX));
 }
 
@@ -734,11 +768,6 @@ void Scene::OnRender(ID3D12Device* device, ID3D12GraphicsCommandList* commandLis
 
         // 그림자 패스에서 객체들 렌더링
         for (auto& [key, value] : m_objects) {
-            if (key.find(L"NetworkTiger_") != std::wstring::npos) {
-                char buffer[256];
-                sprintf_s(buffer, "Rendering tiger object in shadow pass: %ls\n", key.c_str());
-                NetworkManager::LogToFile(buffer);
-            }
             visit([device, commandList](auto& arg) {arg.OnRender(device, commandList); }, value);
         }
         break;
@@ -887,54 +916,31 @@ ID3D12DescriptorHeap* Scene::GetDescriptorHeap()
 }
 
 void Scene::CreateTigerObject(int tigerID, float x, float y, float z, ID3D12Device* device) {
-    NetworkManager::LogToFile("=== CreateTigerObject Start ===");
-    NetworkManager::LogToFile("[Debug] Function called with parameters:");
-    char buffer[256];
-    sprintf_s(buffer, "tigerID: %d, position: (%.2f, %.2f, %.2f)", tigerID, x, y, z);
-    NetworkManager::LogToFile(buffer);
-    
     if (!device) {
-        NetworkManager::LogToFile("[Error] Device is null");
         return;
     }
 
     wstring objectName = L"NetworkTiger_" + std::to_wstring(tigerID);
-    NetworkManager::LogToFile("[Debug] Creating object with name: NetworkTiger_" + std::to_string(tigerID));
     
     try {
         // 기존 Tiger가 있다면 제거
         if (m_objects.find(objectName) != m_objects.end()) {
-            NetworkManager::LogToFile("[Debug] Found existing tiger with same ID - removing it");
             m_objects.erase(objectName);
         }
         
-        // 메모리 상태 확인
-        NetworkManager::LogToFile("[Debug] Current object count: " + std::to_string(m_objects.size()));
-        
         // 객체 수 제한 (메모리 보호)
         if (m_objects.size() > 400) {
-            NetworkManager::LogToFile("[Warning] Too many objects (" + std::to_string(m_objects.size()) + "), skipping tiger creation");
             return;
         }
         
-        // 객체 수가 너무 많으면 경고
-        if (m_objects.size() > 300) {
-            NetworkManager::LogToFile("[Warning] High object count: " + std::to_string(m_objects.size()) + " - possible memory issue");
-        }
-        
-        NetworkManager::LogToFile("[Debug] Adding new TigerObject");
         AddObj(objectName, TigerObject(this));
         
         auto& tiger = GetObj<TigerObject>(objectName);
-        NetworkManager::LogToFile("[Debug] Successfully created TigerObject");
         
         // 지형 높이 계산
         float terrainHeight = CalculateTerrainHeight(x, z);
-        sprintf_s(buffer, "[Debug] Calculated terrain height: %.2f", terrainHeight);
-        NetworkManager::LogToFile(buffer);
         
         // 컴포넌트 추가
-        NetworkManager::LogToFile("[Debug] Adding components...");
         tiger.AddComponent<Position>(Position{ x, terrainHeight, z, 1.0f, &tiger });
         tiger.AddComponent<Rotation>(Rotation{ 0.0f, 0.0f, 0.0f, 0.0f, &tiger });
         tiger.AddComponent<Scale>(Scale{ 0.2f, &tiger });
@@ -943,44 +949,30 @@ void Scene::CreateTigerObject(int tigerID, float x, float y, float z, ID3D12Devi
         tiger.AddComponent<Mesh>(Mesh{ m_resourceManager->GetSubMeshData().at("202411_walk_tiger_center.fbx"), &tiger });
         tiger.AddComponent<Texture>(Texture{ m_subTextureData.at(L"tigercolor"), &tiger });
         tiger.AddComponent<Collider>(Collider{ 0.0f, 0.0f, 0.0f, 2.0f, 50.0f, 10.0f, &tiger });
-        NetworkManager::LogToFile("[Debug] All components added successfully");
         
         // 상수 버퍼 생성
-        NetworkManager::LogToFile("[Debug] Building constant buffer");
         tiger.BuildConstantBuffer(device);
-        NetworkManager::LogToFile("[Debug] Constant buffer created successfully");
-        
-        NetworkManager::LogToFile("[Debug] Tiger object creation completed successfully");
         
     } catch (const std::bad_alloc& e) {
-        sprintf_s(buffer, "[Critical] Memory allocation failed during tiger creation: %s", e.what());
-        NetworkManager::LogToFile(buffer);
         // 메모리 부족 시 기존 객체 정리 시도
         if (m_objects.find(objectName) != m_objects.end()) {
             m_objects.erase(objectName);
         }
     } catch (const std::exception& e) {
-        sprintf_s(buffer, "[Error] Exception during tiger creation: %s", e.what());
-        NetworkManager::LogToFile(buffer);
         // 예외 발생 시 기존 객체 정리 시도
         if (m_objects.find(objectName) != m_objects.end()) {
             m_objects.erase(objectName);
         }
     } catch (...) {
-        NetworkManager::LogToFile("[Critical] Unknown exception during tiger creation");
         // 알 수 없는 예외 발생 시 기존 객체 정리 시도
         if (m_objects.find(objectName) != m_objects.end()) {
             m_objects.erase(objectName);
         }
     }
-    
-    NetworkManager::LogToFile("=== CreateTigerObject End ===");
 }
 
 void Scene::UpdateTigerObject(int tigerID, float x, float y, float z, float rotY) {
-    NetworkManager::LogToFile("[Tiger] Updating tiger object with ID: " + std::to_string(tigerID));
     wstring objectName = L"NetworkTiger_" + std::to_wstring(tigerID);
-    char buffer[256];
     
     if (m_objects.find(objectName) != m_objects.end()) {
         auto& tiger = GetObj<TigerObject>(objectName);
@@ -1001,13 +993,6 @@ void Scene::UpdateTigerObject(int tigerID, float x, float y, float z, float rotY
         interpData.targetRotY = rotY;
         interpData.interpolationTime = INTERPOLATION_DURATION;
         interpData.currentTime = 0.0f;
-        
-        sprintf_s(buffer, "Updated Tiger %d interpolation data from (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)\n", 
-            tigerID, currentPos.x, currentPos.y, currentPos.z, x, terrainHeight, z);
-        NetworkManager::LogToFile(buffer);
-    } else {
-        sprintf_s(buffer, "Failed to update Tiger %d: object not found\n", tigerID);
-        NetworkManager::LogToFile(buffer);
     }
 }
 
@@ -1150,11 +1135,6 @@ void Scene::RenderObjects(ID3D12Device* device, ID3D12GraphicsCommandList* comma
 
     // 기존 오브젝트 렌더링
     for (auto& [key, value] : m_objects) {
-        if (key.find(L"NetworkTiger_") != std::wstring::npos) {
-            char buffer[256];
-            sprintf_s(buffer, "Rendering tiger object: %ls\n", key.c_str());
-            NetworkManager::LogToFile(buffer);
-        }
         visit([device, commandList](auto& arg) {arg.OnRender(device, commandList); }, value);
     }
 }

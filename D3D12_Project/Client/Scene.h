@@ -104,7 +104,7 @@ private:
     };
     
     std::unordered_map<int, TigerInterpolationData> m_tigerInterpolationData;
-    const float INTERPOLATION_DURATION = 0.1f; // 보간에 걸리는 시간 (100ms)
+    const float INTERPOLATION_DURATION = 0.1f; // 보간에 걸리는 시간 (100ms로 조정하여 더 부드러운 움직임)
 
     Framework* m_parent = nullptr;
     wstring m_name;

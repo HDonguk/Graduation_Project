@@ -660,12 +660,25 @@ void GameServer::InitializeTigers() {
     for (int i = 0; i < MAX_TIGERS; ++i) {
         TigerInfo tiger;
         tiger.tigerID = m_nextTigerID++;
-        tiger.x = GetRandomFloat(0.0f, 1000.0f);
+        
+        // 더 자연스러운 분산 배치
+        float centerX = 500.0f;
+        float centerZ = 500.0f;
+        float radius = GetRandomFloat(150.0f, 400.0f);
+        float angle = GetRandomFloat(0.0f, 360.0f) * (3.141592f / 180.0f);
+        
+        tiger.x = centerX + cos(angle) * radius;
         tiger.y = 0.0f;
-        tiger.z = GetRandomFloat(0.0f, 1000.0f);
+        tiger.z = centerZ + sin(angle) * radius;
         tiger.rotY = GetRandomFloat(0.0f, 360.0f);
-        tiger.moveTimer = GetRandomFloat(0.0f, 5.0f);
+        tiger.moveTimer = GetRandomFloat(0.5f, 2.5f);  // 다양한 시작 시간
         tiger.isChasing = false;
+        
+        // 초기 목표 위치 설정 (현재 방향에서 자연스럽게)
+        float moveAngle = angle + GetRandomFloat(-30.0f, 30.0f) * (3.141592f / 180.0f);
+        float moveDistance = GetRandomFloat(40.0f, 90.0f);
+        tiger.targetX = tiger.x + cos(moveAngle) * moveDistance;
+        tiger.targetZ = tiger.z + sin(moveAngle) * moveDistance;
         
         m_tigers[tiger.tigerID] = tiger;
 
@@ -679,10 +692,10 @@ void GameServer::InitializeTigers() {
 
 void GameServer::UpdateTigers(float deltaTime) {
     m_tigerUpdateTimer += deltaTime;
-    if (m_tigerUpdateTimer < 0.5f) return; // 500ms마다 업데이트 (적절한 빈도)
+    if (m_tigerUpdateTimer < 0.1f) return; // 100ms마다 업데이트 (더 자주 업데이트)
 
     for (auto& [id, tiger] : m_tigers) {
-        UpdateTigerBehavior(tiger, m_tigerUpdateTimer);
+        UpdateTigerBehavior(tiger, deltaTime); // deltaTime 사용으로 수정
     }
 
     BroadcastTigerUpdates();
@@ -691,7 +704,7 @@ void GameServer::UpdateTigers(float deltaTime) {
 
 void GameServer::UpdateTigerBehavior(TigerInfo& tiger, float deltaTime) {
     const float CHASE_RADIUS = 200.0f;
-    const float MOVE_SPEED = 25.0f;  // 속도 증가로 더 자연스러운 움직임
+    const float MOVE_SPEED = 30.0f;  // 적절한 속도로 조정
     
     tiger.moveTimer -= deltaTime;
     
@@ -700,7 +713,7 @@ void GameServer::UpdateTigerBehavior(TigerInfo& tiger, float deltaTime) {
         float targetX, targetZ;
         GetNearestPlayerPosition(tiger, targetX, targetZ);
         
-        // 플레이어 방향으로 이동 (더 부드럽게)
+        // 플레이어 방향으로 이동 (적절한 속도)
         float dx = targetX - tiger.x;
         float dz = targetZ - tiger.z;
         float dist = sqrt(dx * dx + dz * dz);
@@ -713,19 +726,19 @@ void GameServer::UpdateTigerBehavior(TigerInfo& tiger, float deltaTime) {
     else {
         tiger.isChasing = false;
         if (tiger.moveTimer <= 0.0f) {
-            // 새로운 랜덤 이동 (더 자연스러운 패턴)
-            tiger.moveTimer = GetRandomFloat(2.0f, 5.0f);  // 더 짧은 간격
+            // 새로운 랜덤 이동 (적절한 간격)
+            tiger.moveTimer = GetRandomFloat(2.0f, 4.0f);  // 적절한 간격으로 조정
             float angle = GetRandomFloat(0.0f, 360.0f) * (3.141592f / 180.0f);
-            tiger.targetX = tiger.x + cos(angle) * GetRandomFloat(50.0f, 150.0f);  // 다양한 거리
-            tiger.targetZ = tiger.z + sin(angle) * GetRandomFloat(50.0f, 150.0f);
+            tiger.targetX = tiger.x + cos(angle) * GetRandomFloat(40.0f, 120.0f);  // 적절한 거리
+            tiger.targetZ = tiger.z + sin(angle) * GetRandomFloat(40.0f, 120.0f);
         }
         
-        // 목표 지점으로 이동 (더 자연스럽게)
+        // 목표 지점으로 이동 (적절한 속도)
         float dx = tiger.targetX - tiger.x;
         float dz = tiger.targetZ - tiger.z;
         float dist = sqrt(dx * dx + dz * dz);
         if (dist > 0.1f) {
-            tiger.x += (dx / dist) * MOVE_SPEED * 0.7f * deltaTime;  // 속도 증가
+            tiger.x += (dx / dist) * MOVE_SPEED * 0.7f * deltaTime;  // 적절한 속도
             tiger.z += (dz / dist) * MOVE_SPEED * 0.7f * deltaTime;
             tiger.rotY = atan2(dx, dz) * (180.0f / 3.141592f);
         }
@@ -745,12 +758,12 @@ void GameServer::BroadcastTigerUpdates() {
         return;  // 로그인된 클라이언트가 없으면 업데이트 전송하지 않음
     }
     
-    // 호랑이 업데이트 전송 (적절한 빈도)
+    // 호랑이 업데이트 전송 (더 자주 전송)
     static int updateCounter = 0;
     updateCounter++;
     
-    // 3번 중 1번만 업데이트 전송 (적절한 빈도)
-    if (updateCounter % 3 != 0) {
+    // 2번 중 1번 업데이트 전송 (더 자주 전송)
+    if (updateCounter % 2 != 0) {
         return;
     }
     
