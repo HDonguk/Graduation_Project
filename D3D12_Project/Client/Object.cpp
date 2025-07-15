@@ -3,6 +3,7 @@
 #include "GameTimer.h"
 #include "Scene.h"
 #include "DXSampleHelper.h"
+#include "NetworkManager.h"
 #include <random>
 
 std::random_device rdX;  // 첫 번째 rd 객체
@@ -460,73 +461,104 @@ TreeObject::TreeObject(Scene* root) : Object{ root }
 
 void TreeObject::OnUpdate(GameTimer& gTimer)
 {
-    // terrain Y 로 object Y 설정하기.
-    XMFLOAT4 pos = GetComponent<Position>().mFloat4;
-    ResourceManager& rm = m_root->GetResourceManager();
-    float newY = 0.f;
-    int width = rm.GetTerrainData().terrainWidth;
-    int height = rm.GetTerrainData().terrainHeight;
-    int terrainScale = rm.GetTerrainData().terrainScale;
+    try {
+        // terrain Y 로 object Y 설정하기.
+        XMFLOAT4 pos = GetComponent<Position>().mFloat4;
+        ResourceManager& rm = m_root->GetResourceManager();
+        float newY = 0.f;
+        int width = rm.GetTerrainData().terrainWidth;
+        int height = rm.GetTerrainData().terrainHeight;
+        int terrainScale = rm.GetTerrainData().terrainScale;
 
-    if (pos.x >= 0 && pos.z >= 0 && pos.x <= width * terrainScale && pos.z <= height * terrainScale) {
-        vector<Vertex>& vertexBuffer = rm.GetVertexBuffer();
-        UINT startVertex = m_root->GetObj<TerrainObject>(L"TerrainObject").GetComponent<Mesh>().mSubMeshData.startVertexLocation;
+        if (pos.x >= 0 && pos.z >= 0 && pos.x <= width * terrainScale && pos.z <= height * terrainScale) {
+            try {
+                vector<Vertex>& vertexBuffer = rm.GetVertexBuffer();
+                UINT startVertex = m_root->GetObj<TerrainObject>(L"TerrainObject").GetComponent<Mesh>().mSubMeshData.startVertexLocation;
 
-        int indexX = (int)(pos.x / terrainScale);
-        int indexZ = (int)(pos.z / terrainScale);
+                int indexX = (int)(pos.x / terrainScale);
+                int indexZ = (int)(pos.z / terrainScale);
 
-        float leftBottom = vertexBuffer[startVertex + indexZ * width + indexX].position.y;
-        float rightBottom = vertexBuffer[startVertex + indexZ * width + indexX + 1].position.y;
-        float leftTop = vertexBuffer[startVertex + (indexZ + 1) * width + indexX].position.y;
-        float rightTop = vertexBuffer[startVertex + (indexZ + 1) * width + indexX + 1].position.y;
+                float leftBottom = vertexBuffer[startVertex + indexZ * width + indexX].position.y;
+                float rightBottom = vertexBuffer[startVertex + indexZ * width + indexX + 1].position.y;
+                float leftTop = vertexBuffer[startVertex + (indexZ + 1) * width + indexX].position.y;
+                float rightTop = vertexBuffer[startVertex + (indexZ + 1) * width + indexX + 1].position.y;
 
-        float offsetX = pos.x / terrainScale - indexX;
-        float offsetZ = pos.z / terrainScale - indexZ;
+                float offsetX = pos.x / terrainScale - indexX;
+                float offsetZ = pos.z / terrainScale - indexZ;
 
-        float lerpXBottom = (1 - offsetX) * leftBottom + offsetX * rightBottom;
-        float lerpXTop = (1 - offsetX) * leftTop + offsetX * rightTop;
+                float lerpXBottom = (1 - offsetX) * leftBottom + offsetX * rightBottom;
+                float lerpXTop = (1 - offsetX) * leftTop + offsetX * rightTop;
 
-        float lerpZ = (1 - offsetZ) * lerpXBottom + offsetZ * lerpXTop;
+                float lerpZ = (1 - offsetZ) * lerpXBottom + offsetZ * lerpXTop;
 
-        newY = lerpZ;
+                newY = lerpZ;
+            }
+            catch (const std::exception& e) {
+                NetworkManager::LogToFile("[Tree] Terrain height calculation failed: " + std::string(e.what()));
+                newY = 0.0f;
+            }
+        }
+        
+        // 충돌체 위치 조정 (안전하게)
+        if (FindComponent<Collider>()) {
+            GetComponent<Collider>().mAABB.Center = { pos.x, newY + 5.f, pos.z };
+        }
+
+        XMVECTOR newPos{ pos.x, newY, pos.z };
+        GetComponent<Position>().SetXMVECTOR(newPos);
+        // terrain Y 로 object Y 설정하기. end
+
+        XMMATRIX scale = XMMatrixScalingFromVector(GetComponent<Scale>().GetXMVECTOR());
+
+        GetComponent<Rotation>().SetXMVECTOR(GetComponent<Rotation>().GetXMVECTOR() + GetComponent<Rotate>().GetXMVECTOR() * gTimer.DeltaTime());
+        XMMATRIX rotate = XMMatrixRotationRollPitchYawFromVector(GetComponent<Rotation>().GetXMVECTOR() * (XM_PI / 180.0f));
+
+        GetComponent<Position>().SetXMVECTOR(GetComponent<Position>().GetXMVECTOR() + GetComponent<Velocity>().GetXMVECTOR() * gTimer.DeltaTime());
+        GetComponent<Velocity>().SetXMVECTOR(XMVECTOR{ 0,0,0,0 });
+        XMVECTOR pivot{ -16.5f, 4.5f, -50.f }; // pivot 조정
+        XMMATRIX translate = XMMatrixTranslationFromVector(GetComponent<Position>().GetXMVECTOR() + pivot);
+
+        // 월드 행렬 = 크기 행렬 * 회전 행렬 * 이동 행렬
+        XMMATRIX world = scale * rotate * translate;
+        memcpy(m_mappedData, &XMMatrixTranspose(world), sizeof(XMMATRIX)); // 처음 매개변수는 시작주소
+
+        //애니메이션 유무
+        int isAnimate = FindComponent<Animation>();
+        if (isAnimate) {
+            Animation& animComponent = GetComponent<Animation>();
+            
+            // 애니메이션 데이터가 존재하는지 확인
+            if (animComponent.mAnimData && !animComponent.mAnimData->empty()) {
+                try {
+                    vector<XMFLOAT4X4> finalTransforms{ 90 };
+                    SkinnedData& animData = animComponent.mAnimData->at("");
+                    animComponent.mAnimationTime += gTimer.DeltaTime();
+                    if (animComponent.mAnimationTime > animData.GetClipEndTime("")) animComponent.mAnimationTime = 0.f;
+                    animData.GetFinalTransforms("", animComponent.mAnimationTime, finalTransforms);
+                    memcpy(m_mappedData + sizeof(XMFLOAT4X4), finalTransforms.data(), sizeof(XMFLOAT4X4) * 90);
+                }
+                catch (const std::exception& e) {
+                    // 애니메이션 데이터 접근 실패 시 애니메이션 비활성화
+                    isAnimate = 0;
+                    NetworkManager::LogToFile("[Tree] Animation data access failed: " + std::string(e.what()));
+                }
+            } else {
+                // 애니메이션 데이터가 없으면 애니메이션 비활성화
+                isAnimate = 0;
+            }
+        }
+        memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91, &isAnimate, sizeof(int));
+        float powValue = 1.f; // 짝수이면 안됨
+        memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4, &powValue, sizeof(float));
+        float ambiantValue = 0.4f;
+        memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4 + sizeof(float), &ambiantValue, sizeof(float));
     }
-    // 충돌체 위치 조정
-    GetComponent<Collider>().mAABB.Center = { pos.x, newY + 5.f, pos.z };
-
-    XMVECTOR newPos{ pos.x, newY, pos.z };
-    GetComponent<Position>().SetXMVECTOR(newPos);
-    // terrain Y 로 object Y 설정하기. end
-
-    XMMATRIX scale = XMMatrixScalingFromVector(GetComponent<Scale>().GetXMVECTOR());
-
-    GetComponent<Rotation>().SetXMVECTOR(GetComponent<Rotation>().GetXMVECTOR() + GetComponent<Rotate>().GetXMVECTOR() * gTimer.DeltaTime());
-    XMMATRIX rotate = XMMatrixRotationRollPitchYawFromVector(GetComponent<Rotation>().GetXMVECTOR() * (XM_PI / 180.0f));
-
-    GetComponent<Position>().SetXMVECTOR(GetComponent<Position>().GetXMVECTOR() + GetComponent<Velocity>().GetXMVECTOR() * gTimer.DeltaTime());
-    GetComponent<Velocity>().SetXMVECTOR(XMVECTOR{ 0,0,0,0 });
-    XMVECTOR pivot{ -16.5f, 4.5f, -50.f }; // pivot 조정
-    XMMATRIX translate = XMMatrixTranslationFromVector(GetComponent<Position>().GetXMVECTOR() + pivot);
-
-    // 월드 행렬 = 크기 행렬 * 회전 행렬 * 이동 행렬
-    XMMATRIX world = scale * rotate * translate;
-    memcpy(m_mappedData, &XMMatrixTranspose(world), sizeof(XMMATRIX)); // 처음 매개변수는 시작주소
-
-    //애니메이션 유무
-    int isAnimate = FindComponent<Animation>();
-    if (isAnimate) {
-        vector<XMFLOAT4X4> finalTransforms{ 90 };
-        Animation& animComponent = GetComponent<Animation>();
-        SkinnedData& animData = animComponent.mAnimData->at("");
-        animComponent.mAnimationTime += gTimer.DeltaTime();
-        if (animComponent.mAnimationTime > animData.GetClipEndTime("")) animComponent.mAnimationTime = 0.f;
-        animData.GetFinalTransforms("", animComponent.mAnimationTime, finalTransforms);
-        memcpy(m_mappedData + sizeof(XMFLOAT4X4), finalTransforms.data(), sizeof(XMFLOAT4X4) * 90); // 처음 매개변수는 시작주소
+    catch (const std::exception& e) {
+        NetworkManager::LogToFile("[Tree] OnUpdate exception: " + std::string(e.what()));
     }
-    memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91, &isAnimate, sizeof(int));
-    float powValue = 1.f; // 짝수이면 안됨
-    memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4, &powValue, sizeof(float));
-    float ambiantValue = 0.4f;
-    memcpy(m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4 + sizeof(float), &ambiantValue, sizeof(float));
+    catch (...) {
+        NetworkManager::LogToFile("[Tree] Unknown exception in OnUpdate");
+    }
 }
 
 void TreeObject::LateUpdate(GameTimer& gTimer)
@@ -593,14 +625,28 @@ void TigerObject::OnUpdate(GameTimer& gTimer)
     // 애니메이션 업데이트
     int isAnimate = FindComponent<Animation>();
     if (isAnimate) {
-        vector<XMFLOAT4X4> finalTransforms{ 90 };
         Animation& animComponent = GetComponent<Animation>();
-        SkinnedData& animData = animComponent.mAnimData->at("202411_walk_tiger_center.fbx");
-        animComponent.mAnimationTime += gTimer.DeltaTime();
-        string clipName = "Take 001";
-        if (animComponent.mAnimationTime >= animData.GetClipEndTime(clipName)) animComponent.mAnimationTime = 0.f;
-        animData.GetFinalTransforms(clipName, animComponent.mAnimationTime, finalTransforms);
-        memcpy(m_mappedData + sizeof(XMMATRIX), finalTransforms.data(), sizeof(XMMATRIX) * 90);
+        
+        // 애니메이션 데이터가 존재하는지 확인
+        if (animComponent.mAnimData && !animComponent.mAnimData->empty()) {
+            try {
+                vector<XMFLOAT4X4> finalTransforms{ 90 };
+                SkinnedData& animData = animComponent.mAnimData->at("202411_walk_tiger_center.fbx");
+                animComponent.mAnimationTime += gTimer.DeltaTime();
+                string clipName = "Take 001";
+                if (animComponent.mAnimationTime >= animData.GetClipEndTime(clipName)) animComponent.mAnimationTime = 0.f;
+                animData.GetFinalTransforms(clipName, animComponent.mAnimationTime, finalTransforms);
+                memcpy(m_mappedData + sizeof(XMMATRIX), finalTransforms.data(), sizeof(XMMATRIX) * 90);
+            }
+            catch (const std::exception& e) {
+                // 애니메이션 데이터 접근 실패 시 애니메이션 비활성화
+                isAnimate = 0;
+                NetworkManager::LogToFile("[Tiger] Animation data access failed: " + std::string(e.what()));
+            }
+        } else {
+            // 애니메이션 데이터가 없으면 애니메이션 비활성화
+            isAnimate = 0;
+        }
     }
     
     // 상수 버퍼 업데이트

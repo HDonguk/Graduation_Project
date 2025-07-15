@@ -825,36 +825,29 @@ void GameServer::SendTreePositions(int clientID) {
         return;
     }
     
-    int sentCount = 0;
+    // 모든 나무 위치 정보를 하나의 패킷으로 묶어서 전송
+    PacketTreeSpawn treePacket;
+    treePacket.header.type = PACKET_TREE_SPAWN;
+    treePacket.header.size = sizeof(PacketTreeSpawn);
+    treePacket.treeCount = 0;
+    
     for (const auto& [treeID, tree] : m_trees) {
-        // 클라이언트 상태 재확인
-        if (m_clients.find(clientID) == m_clients.end() || 
-            m_clients[clientID].socket == INVALID_SOCKET) {
-            std::cout << "[Tree] Client disconnected during tree send" << std::endl;
-            break;
-        }
+        if (treePacket.treeCount >= 20) break; // 최대 20개까지만
         
-        PacketTreeSpawn treePacket;
-        treePacket.header.type = PACKET_TREE_SPAWN;
-        treePacket.header.size = sizeof(PacketTreeSpawn);
-        treePacket.treeID = tree.treeID;
-        treePacket.x = tree.x;
-        treePacket.y = tree.y;
-        treePacket.z = tree.z;
-        treePacket.rotY = tree.rotY;
-        treePacket.treeType = tree.treeType;
-        
-        if (!SendPacket(m_clients[clientID].socket, &treePacket, sizeof(PacketTreeSpawn))) {
-            std::cout << "[Tree] Failed to send tree packet for ID: " << tree.treeID << std::endl;
-            break;
-        }
-        
-        sentCount++;
-        // 각 나무 위치 전송 사이에 지연 (클라이언트 처리 시간 확보)
-        Sleep(20);  // 20ms로 증가
+        treePacket.trees[treePacket.treeCount].x = tree.x;
+        treePacket.trees[treePacket.treeCount].y = tree.y;
+        treePacket.trees[treePacket.treeCount].z = tree.z;
+        treePacket.trees[treePacket.treeCount].rotY = tree.rotY;
+        treePacket.trees[treePacket.treeCount].treeType = tree.treeType;
+        treePacket.treeCount++;
     }
     
-    std::cout << "[Tree] Completed sending " << sentCount << " tree positions to client " << clientID << std::endl;
+    if (!SendPacket(m_clients[clientID].socket, &treePacket, sizeof(PacketTreeSpawn))) {
+        std::cout << "[Tree] Failed to send tree positions packet" << std::endl;
+        return;
+    }
+    
+    std::cout << "[Tree] Successfully sent " << treePacket.treeCount << " tree positions to client " << clientID << std::endl;
 }
 
 float GameServer::GetRandomFloat(float min, float max) {

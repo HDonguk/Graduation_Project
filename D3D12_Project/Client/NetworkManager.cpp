@@ -613,23 +613,34 @@ void NetworkManager::ProcessPacket(char* buffer) {
 
             case PACKET_TREE_SPAWN: {
                 PacketTreeSpawn* treeSpawnPkt = (PacketTreeSpawn*)buffer;
+                LogToFile("[Tree] Received tree positions packet with " + std::to_string(treeSpawnPkt->treeCount) + " trees");
                 
                 // 로그인 상태 확인 - 로그인 전에 받은 나무 스폰 패킷은 무시
                 if (!m_isLoggedIn) {
+                    LogToFile("[Tree] Ignoring tree spawn packet - not logged in yet");
                     break;
                 }
                 
-                // Scene에 Tree 생성 요청
+                // Scene에 모든 Tree 생성 요청
                 if (m_scene && m_scene->GetDevice() != nullptr) {
                     try {
-                        m_scene->CreateTreeObject(treeSpawnPkt->treeID, treeSpawnPkt->x, treeSpawnPkt->y, treeSpawnPkt->z, treeSpawnPkt->rotY, treeSpawnPkt->treeType, m_scene->GetDevice());
+                        LogToFile("[Tree] Creating " + std::to_string(treeSpawnPkt->treeCount) + " tree objects");
                         
-                        // 나무 생성 후 짧은 지연 (렌더링 스레드에 시간 확보)
-                        Sleep(10);
+                        for (int i = 0; i < treeSpawnPkt->treeCount; i++) {
+                            const TreePosition& treePos = treeSpawnPkt->trees[i];
+                            m_scene->CreateTreeObject(i + 1, treePos.x, treePos.y, treePos.z, treePos.rotY, treePos.treeType, m_scene->GetDevice());
+                        }
+                        
+                        LogToFile("[Tree] Successfully created " + std::to_string(treeSpawnPkt->treeCount) + " tree objects");
+                    }
+                    catch (const std::exception& e) {
+                        LogToFile("[Tree] Failed to create tree objects: " + std::string(e.what()));
                     }
                     catch (...) {
-                        // 예외가 발생해도 클라이언트는 계속 실행
+                        LogToFile("[Tree] Unknown exception while creating tree objects");
                     }
+                } else {
+                    LogToFile("[Tree] Scene or device not ready for tree creation");
                 }
                 break;
             }

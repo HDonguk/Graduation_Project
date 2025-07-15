@@ -1167,27 +1167,20 @@ void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, 
         if (m_subTextureData.find(L"longTree") == m_subTextureData.end()) return;
         
         AddObj(objectName, TreeObject(this));
-        auto& tree = GetObj<TreeObject>(objectName);
+        auto* objectPtr = &GetObj<TreeObject>(objectName);
         
-        // 지형 높이 계산
-        float terrainHeight = CalculateTerrainHeight(x, z);
-        
-        // 컴포넌트 추가
-        tree.AddComponent<Position>(Position{ x, terrainHeight, z, 1.0f, &tree });
-        tree.AddComponent<Rotation>(Rotation{ 0.0f, rotY, 0.0f, 0.0f, &tree });
-        tree.AddComponent<Scale>(Scale{ 1.0f, &tree });
-        
-        // Tree 타입에 따라 다른 메시 사용
-        if (treeType == 0) {
-            tree.AddComponent<Mesh>(Mesh{ m_resourceManager->GetSubMeshData().at("long_tree.fbx"), &tree });
-        } else {
-            tree.AddComponent<Mesh>(Mesh{ m_resourceManager->GetSubMeshData().at("long_tree.fbx"), &tree });
-        }
-        
-        tree.AddComponent<Texture>(Texture{ m_subTextureData.at(L"longTree"), &tree });
+        // 원래 방식대로 컴포넌트 추가
+        objectPtr->AddComponent(Position{ x, 0.f, z, 1.f, objectPtr });
+        objectPtr->AddComponent(Velocity{ 0.f, 0.f, 0.f, 0.f, objectPtr });
+        objectPtr->AddComponent(Rotation{ 0.0f, rotY, 0.0f, 0.0f, objectPtr });
+        objectPtr->AddComponent(Rotate{ 0.0f, 0.0f, 0.0f, 0.0f, objectPtr });
+        objectPtr->AddComponent(Scale{ 20.f, objectPtr });
+        objectPtr->AddComponent(Mesh{ subMeshData.at("long_tree.fbx"), objectPtr });
+        objectPtr->AddComponent(Texture{ m_subTextureData.at(L"longTree"), objectPtr });
+        objectPtr->AddComponent(Collider{ 0.f, 0.f, 0.f, 3.f, 50.f, 3.f, objectPtr });
         
         // 상수 버퍼 생성
-        tree.BuildConstantBuffer(device);
+        objectPtr->BuildConstantBuffer(device);
         
         // 나무 생성 완료 후 메모리 사용량 체크 (20개마다)
         if (treeID % 20 == 0) {

@@ -46,12 +46,16 @@ struct PacketTigerUpdate {
     float rotY;
 };
 
-struct PacketTreeSpawn {
-    PacketHeader header;
-    int treeID;
+struct TreePosition {
     float x, y, z;
     float rotY;
     int treeType;  // 0: long_tree, 1: normal_tree
+};
+
+struct PacketTreeSpawn {
+    PacketHeader header;
+    int treeCount;
+    TreePosition trees[20];  // 최대 20개 나무 위치 정보
 };
 
 struct PacketLoginRequest {
