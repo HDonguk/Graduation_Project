@@ -382,7 +382,19 @@ void Framework::OnKeyUp(UINT8 key)
 void Framework::OnNetworkUpdate()
 {
     // 네트워크 업데이트 처리
-    if (networkManager.IsRunning() && m_scenes.find(L"BaseScene") != m_scenes.end()) {
+    static int updateCount = 0;
+    if (++updateCount % 60 == 0) { // 1초마다 로그 (60FPS 기준)
+        NetworkManager::LogToFile("[Framework] OnNetworkUpdate check - IsRunning: " + std::to_string(networkManager.IsRunning()) + 
+                                 ", IsLoggedIn: " + std::to_string(networkManager.IsLoggedIn()) + 
+                                 ", IsInLoginScreen: " + std::to_string(m_isInLoginScreen) + 
+                                 ", BaseScene exists: " + std::to_string(m_scenes.find(L"BaseScene") != m_scenes.end()));
+    }
+    
+    // 로그인 후 게임 화면에서는 항상 네트워크 업데이트 실행 (IsRunning 조건 제거)
+    if (!m_isInLoginScreen && m_scenes.find(L"BaseScene") != m_scenes.end()) {
+        if (updateCount % 60 == 0) { // 1초마다 로그 (60FPS 기준)
+            NetworkManager::LogToFile("[Framework] OnNetworkUpdate called - processing network updates");
+        }
         networkManager.Update(m_Timer, &m_scenes[L"BaseScene"]);
     }
 }
