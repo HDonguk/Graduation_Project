@@ -1145,7 +1145,10 @@ void Scene::RenderObjects(ID3D12Device* device, ID3D12GraphicsCommandList* comma
 }
 
 void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, int treeType, ID3D12Device* device) {
-    if (!device) return;
+    if (!device) {
+        NetworkManager::LogToFile("[Tree] Device is null, skipping tree creation");
+        return;
+    }
 
     wstring objectName = L"NetworkTree_" + std::to_wstring(treeID);
     
@@ -1156,20 +1159,33 @@ void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, 
         }
         
         // 객체 수 제한 (메모리 보호)
-        if (m_objects.size() > 400) return;
+        if (m_objects.size() > 400) {
+            NetworkManager::LogToFile("[Tree] Too many objects, skipping tree creation");
+            return;
+        }
         
         // 리소스 매니저 확인
-        if (!m_resourceManager) return;
+        if (!m_resourceManager) {
+            NetworkManager::LogToFile("[Tree] Resource manager is null, skipping tree creation");
+            return;
+        }
         
         // 필요한 리소스들이 존재하는지 확인
         auto& subMeshData = m_resourceManager->GetSubMeshData();
-        if (subMeshData.find("long_tree.fbx") == subMeshData.end()) return;
-        if (m_subTextureData.find(L"longTree") == m_subTextureData.end()) return;
+        if (subMeshData.find("long_tree.fbx") == subMeshData.end()) {
+            NetworkManager::LogToFile("[Tree] long_tree.fbx not found in subMeshData");
+            return;
+        }
+        if (m_subTextureData.find(L"longTree") == m_subTextureData.end()) {
+            NetworkManager::LogToFile("[Tree] longTree texture not found");
+            return;
+        }
         
+        // TreeObject 생성
         AddObj(objectName, TreeObject(this));
         auto* objectPtr = &GetObj<TreeObject>(objectName);
         
-        // 원래 방식대로 컴포넌트 추가
+        // 컴포넌트 추가
         objectPtr->AddComponent(Position{ x, 0.f, z, 1.f, objectPtr });
         objectPtr->AddComponent(Velocity{ 0.f, 0.f, 0.f, 0.f, objectPtr });
         objectPtr->AddComponent(Rotation{ 0.0f, rotY, 0.0f, 0.0f, objectPtr });
@@ -1179,11 +1195,47 @@ void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, 
         objectPtr->AddComponent(Texture{ m_subTextureData.at(L"longTree"), objectPtr });
         objectPtr->AddComponent(Collider{ 0.f, 0.f, 0.f, 3.f, 50.f, 3.f, objectPtr });
         
-        // 상수 버퍼 생성
-        objectPtr->BuildConstantBuffer(device);
+        // 상수 버퍼 생성 - 더 안전한 방법으로
+        try {
+            objectPtr->BuildConstantBuffer(device);
+            
+            // 상수 버퍼 생성 후 m_mappedData가 유효한지 확인
+            if (!objectPtr->m_mappedData) {
+                NetworkManager::LogToFile("[Tree] m_mappedData is null after BuildConstantBuffer");
+                m_objects.erase(objectName);
+                return;
+            }
+            
+            // 초기 월드 행렬 설정
+            XMMATRIX scale = XMMatrixScalingFromVector(objectPtr->GetComponent<Scale>().GetXMVECTOR());
+            XMMATRIX rotate = XMMatrixRotationRollPitchYawFromVector(objectPtr->GetComponent<Rotation>().GetXMVECTOR() * (XM_PI / 180.0f));
+            XMMATRIX translate = XMMatrixTranslationFromVector(objectPtr->GetComponent<Position>().GetXMVECTOR());
+            XMMATRIX world = scale * rotate * translate;
+            
+            memcpy(objectPtr->m_mappedData, &XMMatrixTranspose(world), sizeof(XMMATRIX));
+            
+            // 애니메이션 관련 데이터 초기화
+            int isAnimate = 0; // 나무는 애니메이션 없음
+            memcpy(objectPtr->m_mappedData + sizeof(XMFLOAT4X4) * 91, &isAnimate, sizeof(int));
+            float powValue = 1.f;
+            memcpy(objectPtr->m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4, &powValue, sizeof(float));
+            float ambiantValue = 0.4f;
+            memcpy(objectPtr->m_mappedData + sizeof(XMFLOAT4X4) * 91 + sizeof(int) * 4 + sizeof(float), &ambiantValue, sizeof(float));
+            
+        } catch (const std::exception& e) {
+            NetworkManager::LogToFile("[Tree] Failed to build constant buffer: " + std::string(e.what()));
+            // 상수 버퍼 생성 실패 시 객체 제거
+            m_objects.erase(objectName);
+            return;
+        } catch (...) {
+            NetworkManager::LogToFile("[Tree] Unknown exception in BuildConstantBuffer");
+            // 상수 버퍼 생성 실패 시 객체 제거
+            m_objects.erase(objectName);
+            return;
+        }
         
-        // 나무 생성 완료 후 메모리 사용량 체크 (20개마다)
-        if (treeID % 20 == 0) {
+        // 나무 생성 완료 후 메모리 사용량 체크 (10개마다)
+        if (treeID % 10 == 0) {
             PROCESS_MEMORY_COUNTERS_EX pmc;
             if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
                 float memoryUsageMB = static_cast<float>(pmc.WorkingSetSize) / (1024.0f * 1024.0f);
@@ -1191,7 +1243,14 @@ void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, 
             }
         }
         
+    } catch (const std::exception& e) {
+        NetworkManager::LogToFile("[Tree] Exception in CreateTreeObject: " + std::string(e.what()));
+        // 예외 발생 시 기존 객체 정리 시도
+        if (m_objects.find(objectName) != m_objects.end()) {
+            m_objects.erase(objectName);
+        }
     } catch (...) {
+        NetworkManager::LogToFile("[Tree] Unknown exception in CreateTreeObject");
         // 예외 발생 시 기존 객체 정리 시도
         if (m_objects.find(objectName) != m_objects.end()) {
             m_objects.erase(objectName);

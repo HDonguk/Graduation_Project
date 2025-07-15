@@ -45,6 +45,7 @@ int Framework::Run(HINSTANCE hInstance, int nCmdShow)
                 OnUpdate(m_Timer);
                 CheckCollision();
                 LateUpdate(m_Timer);
+                OnNetworkUpdate(); // 네트워크 업데이트 추가 (나무 생성 큐 처리)
                 OnRender();
 
                 // 로그인 화면일 때만 FPS 제한 (60FPS)

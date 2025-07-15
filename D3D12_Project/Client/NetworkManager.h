@@ -7,6 +7,7 @@
 #include <ctime>
 #include <mutex>
 #include <unordered_map>
+#include <queue>
 
 // 에러 타입 정의
 enum class ErrorType {
@@ -15,6 +16,14 @@ enum class ErrorType {
     SEND_FAILED,
     RECEIVE_FAILED,
     TIMEOUT
+};
+
+// 나무 생성 요청 구조체
+struct TreeSpawnRequest {
+    int treeID;
+    float x, y, z;
+    float rotY;
+    int treeType;
 };
 
 class OtherPlayerManager;
@@ -46,6 +55,7 @@ public:
 private:
     static DWORD WINAPI NetworkThread(LPVOID arg);
     void ProcessPacket(char* buffer);
+    void ProcessTreeSpawnQueue(); // 나무 생성 큐 처리
 
     struct TigerInfo {
         int tigerID;
@@ -53,6 +63,10 @@ private:
         float rotY;
     };
     std::unordered_map<int, TigerInfo> m_tigers;  // 타이거 정보 저장
+
+    // 나무 생성 요청 큐 (스레드 안전)
+    std::queue<TreeSpawnRequest> m_treeSpawnQueue;
+    std::mutex m_treeSpawnMutex;
 
     Scene* m_scene{nullptr};
     SOCKET sock;

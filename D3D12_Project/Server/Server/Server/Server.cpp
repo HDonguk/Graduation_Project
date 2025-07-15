@@ -699,9 +699,9 @@ void GameServer::InitializeTigers() {
 void GameServer::InitializeTrees() {
     std::cout << "\n[InitializeTrees] Starting tree position initialization..." << std::endl;
     
-    // 플레이어 주변에 20개의 나무만 생성
-    const int TREE_COUNT = 20;
-    const float SPAWN_RADIUS = 300.0f; // 플레이어 주변 300 유닛 반경
+    // 플레이어 주변에 3개의 나무만 생성 (더욱 안정성을 위해 개수 최소화)
+    const int TREE_COUNT = 3;
+    const float SPAWN_RADIUS = 200.0f; // 플레이어 주변 200 유닛 반경 (더 가까이)
     
     for (int i = 0; i < TREE_COUNT; ++i) {
         TreeInfo tree;
@@ -709,7 +709,7 @@ void GameServer::InitializeTrees() {
         
         // 플레이어 주변 랜덤 위치 생성
         float angle = GetRandomFloat(0.0f, 360.0f) * (3.141592f / 180.0f);
-        float distance = GetRandomFloat(50.0f, SPAWN_RADIUS);
+        float distance = GetRandomFloat(30.0f, SPAWN_RADIUS); // 더 가까운 거리
         
         tree.x = 500.0f + cos(angle) * distance; // 플레이어 시작 위치 주변
         tree.y = 0.0f;
@@ -832,7 +832,7 @@ void GameServer::SendTreePositions(int clientID) {
     treePacket.treeCount = 0;
     
     for (const auto& [treeID, tree] : m_trees) {
-        if (treePacket.treeCount >= 20) break; // 최대 20개까지만
+        if (treePacket.treeCount >= 3) break; // 최대 3개까지만 (안정성을 위해)
         
         treePacket.trees[treePacket.treeCount].x = tree.x;
         treePacket.trees[treePacket.treeCount].y = tree.y;

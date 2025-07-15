@@ -37,13 +37,13 @@ public:
 	void SetActive(bool active) { m_isActive = active; }
 	bool IsActive() const { return m_isActive; }
 
-protected:
-	Scene* m_root;
-	unordered_map<string, ComponentVariant> m_components;
-
 	// 오브젝트 마다 독립적인 CB
 	UINT8* m_mappedData;
 	ComPtr<ID3D12Resource> m_constantBuffer;
+
+protected:
+	Scene* m_root;
+	unordered_map<string, ComponentVariant> m_components;
 
 private:
 	bool m_isActive = true;

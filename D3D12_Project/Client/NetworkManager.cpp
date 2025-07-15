@@ -621,26 +621,21 @@ void NetworkManager::ProcessPacket(char* buffer) {
                     break;
                 }
                 
-                // Scene에 모든 Tree 생성 요청
-                if (m_scene && m_scene->GetDevice() != nullptr) {
-                    try {
-                        LogToFile("[Tree] Creating " + std::to_string(treeSpawnPkt->treeCount) + " tree objects");
-                        
-                        for (int i = 0; i < treeSpawnPkt->treeCount; i++) {
-                            const TreePosition& treePos = treeSpawnPkt->trees[i];
-                            m_scene->CreateTreeObject(i + 1, treePos.x, treePos.y, treePos.z, treePos.rotY, treePos.treeType, m_scene->GetDevice());
-                        }
-                        
-                        LogToFile("[Tree] Successfully created " + std::to_string(treeSpawnPkt->treeCount) + " tree objects");
+                // 나무 생성 요청을 큐에 추가 (스레드 안전)
+                {
+                    std::lock_guard<std::mutex> lock(m_treeSpawnMutex);
+                    for (int i = 0; i < treeSpawnPkt->treeCount; i++) {
+                        const TreePosition& treePos = treeSpawnPkt->trees[i];
+                        TreeSpawnRequest request;
+                        request.treeID = i + 1;
+                        request.x = treePos.x;
+                        request.y = treePos.y;
+                        request.z = treePos.z;
+                        request.rotY = treePos.rotY;
+                        request.treeType = treePos.treeType;
+                        m_treeSpawnQueue.push(request);
                     }
-                    catch (const std::exception& e) {
-                        LogToFile("[Tree] Failed to create tree objects: " + std::string(e.what()));
-                    }
-                    catch (...) {
-                        LogToFile("[Tree] Unknown exception while creating tree objects");
-                    }
-                } else {
-                    LogToFile("[Tree] Scene or device not ready for tree creation");
+                    LogToFile("[Tree] Added " + std::to_string(treeSpawnPkt->treeCount) + " tree spawn requests to queue");
                 }
                 break;
             }
@@ -688,6 +683,55 @@ void NetworkManager::LogToFile(const std::string& message) {
     }
 }
 
+void NetworkManager::ProcessTreeSpawnQueue() {
+    // 큐에서 나무 생성 요청을 가져와서 처리
+    std::lock_guard<std::mutex> lock(m_treeSpawnMutex);
+    
+    if (m_treeSpawnQueue.empty()) {
+        return;
+    }
+    
+    LogToFile("[Tree] Processing tree spawn queue, size: " + std::to_string(m_treeSpawnQueue.size()));
+    
+    // 한 번에 최대 1개씩만 처리 (더욱 안전하게)
+    int processedCount = 0;
+    const int MAX_PROCESS_PER_FRAME = 1;
+    
+    while (!m_treeSpawnQueue.empty() && processedCount < MAX_PROCESS_PER_FRAME) {
+        TreeSpawnRequest request = m_treeSpawnQueue.front();
+        m_treeSpawnQueue.pop();
+        
+        LogToFile("[Tree] Processing tree spawn request for ID: " + std::to_string(request.treeID));
+        
+        try {
+            if (m_scene && m_scene->GetDevice() != nullptr) {
+                LogToFile("[Tree] Scene and device are valid, creating tree: " + std::to_string(request.treeID));
+                
+                // 나무 생성 시도
+                m_scene->CreateTreeObject(request.treeID, request.x, request.y, request.z, request.rotY, request.treeType, m_scene->GetDevice());
+                LogToFile("[Tree] Successfully created tree: " + std::to_string(request.treeID));
+                
+                // 나무 생성 후 더 긴 지연 (GPU 리소스 안정화)
+                Sleep(100); // 100ms로 증가
+            } else {
+                LogToFile("[Tree] Scene or device is null, skipping tree creation");
+            }
+        }
+        catch (const std::exception& e) {
+            LogToFile("[Tree] Failed to create tree " + std::to_string(request.treeID) + ": " + std::string(e.what()));
+        }
+        catch (...) {
+            LogToFile("[Tree] Unknown exception creating tree " + std::to_string(request.treeID));
+        }
+        
+        processedCount++;
+    }
+    
+    if (!m_treeSpawnQueue.empty()) {
+        LogToFile("[Tree] Queue still has " + std::to_string(m_treeSpawnQueue.size()) + " pending requests");
+    }
+}
+
 void NetworkManager::Update(GameTimer& gTimer, Scene* scene) {
     if (!m_scene) return;
 
@@ -702,6 +746,9 @@ void NetworkManager::Update(GameTimer& gTimer, Scene* scene) {
     }
 
     if (!m_isRunning) return;
+
+    // 나무 생성 큐 처리 (메인 스레드에서 안전하게 처리)
+    ProcessTreeSpawnQueue();
 
     auto& player = scene->GetObj<PlayerObject>(L"PlayerObject");
     auto& position = player.GetComponent<Position>();
