@@ -143,7 +143,7 @@ void Framework::OnUpdate(GameTimer& gTimer)
             if (networkManager.IsRunning() && networkManager.IsLoggedIn()) {
                 static float networkTimer = 0.0f;
                 networkTimer += gTimer.DeltaTime();
-                if (networkTimer >= 0.5f) {  // 500ms마다 업데이트 (네트워크 부하 감소)
+                if (networkTimer >= 1.0f) {  // 1초마다 업데이트 (네트워크 부하 더욱 감소)
                     auto& player = m_scenes[L"BaseScene"].GetObj<PlayerObject>(L"PlayerObject");
                     auto& position = player.GetComponent<Position>();
                     auto& rotation = player.GetComponent<Rotation>();
@@ -190,6 +190,12 @@ void Framework::OnRender()
         // 로그인 화면에서는 간단한 배경만 렌더링
         // Windows 컨트롤은 자동으로 렌더링됨
         return;
+    }
+    
+    // 게임 화면 렌더링 시작 로그
+    static int renderCount = 0;
+    if (++renderCount % 60 == 0) { // 1초마다 로그 (60FPS 기준)
+        NetworkManager::LogToFile("[Framework] Rendering game screen - Scene: " + std::string(m_currentSceneName.begin(), m_currentSceneName.end()));
     }
 
     try {
@@ -291,7 +297,12 @@ void Framework::OnLoginSuccess(int clientID, const std::string& username) {
     // 게임 씬으로 전환
     if (m_scenes.find(L"BaseScene") != m_scenes.end()) {
         m_currentSceneName = L"BaseScene";
+        NetworkManager::LogToFile("[Framework] Switched to BaseScene successfully");
+    } else {
+        NetworkManager::LogToFile("[Framework] ERROR: BaseScene not found!");
     }
+    
+    NetworkManager::LogToFile("[Framework] Game screen transition completed");
 }
 
 void Framework::OnLoginFailed(const std::string& errorMessage) {
@@ -312,30 +323,40 @@ void Framework::OnConnectToServer(const std::wstring& serverIP, int port) {
         // 연결 성공 시 로그인 요청 전송
         m_loginUI.SetState(UIState::CONNECTING);
         
-        // 잠시 후 로그인 요청 전송 (서버 연결 완료 대기)
-        std::thread([this]() {
-            Sleep(100); // 100ms 대기
-            if (networkManager.IsRunning()) {
-                // 사용자명 가져오기 (LoginUI에서)
-                wchar_t username[256] = {0};
-                HWND editUsername = GetDlgItem(m_loginUI.GetHwnd(), 1001);
-                if (editUsername) {
-                    GetWindowText(editUsername, username, 256);
-                }
-                
-                // WideCharToMultiByte를 사용하여 wchar_t를 char로 변환
-                int size_needed = WideCharToMultiByte(CP_UTF8, 0, username, -1, NULL, 0, NULL, NULL);
-                std::string usernameStr(size_needed, 0);
-                WideCharToMultiByte(CP_UTF8, 0, username, -1, &usernameStr[0], size_needed, NULL, NULL);
-                
-                if (!usernameStr.empty()) {
-                    networkManager.SendLoginRequest(usernameStr);
-                } else {
-                    m_loginUI.SetErrorMessage(L"Please enter a username");
-                    m_loginUI.SetState(UIState::ERROR_STATE);
-                }
+            // 잠시 후 로그인 요청 전송 (서버 연결 완료 대기)
+    std::thread([this]() {
+        Sleep(500); // 500ms로 증가 (서버 연결 완료 대기)
+        NetworkManager::LogToFile("[Framework] Attempting to send login request after connection");
+        
+        if (networkManager.IsRunning()) {
+            // 사용자명 가져오기 (LoginUI에서)
+            wchar_t username[256] = {0};
+            HWND editUsername = GetDlgItem(m_loginUI.GetHwnd(), 1001);
+            if (editUsername) {
+                GetWindowText(editUsername, username, 256);
             }
-        }).detach();
+            
+            // WideCharToMultiByte를 사용하여 wchar_t를 char로 변환
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, username, -1, NULL, 0, NULL, NULL);
+            std::string usernameStr(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, username, -1, &usernameStr[0], size_needed, NULL, NULL);
+            
+            NetworkManager::LogToFile("[Framework] Username: " + usernameStr);
+            
+            if (!usernameStr.empty()) {
+                NetworkManager::LogToFile("[Framework] Sending login request");
+                networkManager.SendLoginRequest(usernameStr);
+            } else {
+                NetworkManager::LogToFile("[Framework] Username is empty, showing error");
+                m_loginUI.SetErrorMessage(L"Please enter a username");
+                m_loginUI.SetState(UIState::ERROR_STATE);
+            }
+        } else {
+            NetworkManager::LogToFile("[Framework] Network manager is not running");
+            m_loginUI.SetErrorMessage(L"Network connection failed");
+            m_loginUI.SetState(UIState::ERROR_STATE);
+        }
+    }).detach();
     } else {
         // 연결 실패
         m_loginUI.SetErrorMessage(L"Failed to connect to server");

@@ -60,6 +60,7 @@ public:
 
     void ProcessTigerSpawn(const PacketTigerSpawn* packet);
     void CreateTigerObject(int tigerID, float x, float y, float z, ID3D12Device* device);
+    void CreateTreeObject(int treeID, float x, float y, float z, float rotY, int treeType, ID3D12Device* device);
     void UpdateTigerObject(int tigerID, float x, float y, float z, float rotY);
 
     float CalculateTerrainHeight(float x, float z);

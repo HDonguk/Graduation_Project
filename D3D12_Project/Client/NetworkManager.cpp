@@ -207,8 +207,7 @@ DWORD WINAPI NetworkManager::NetworkThread(LPVOID arg) {
                     continue;  // 일시적 에러, 무시
                 }
                 if (error == WSAECONNRESET || error == WSAECONNABORTED || error == WSAENOTSOCK) {
-                    network->LogToFile("[Error] Connection issue: " + std::to_string(error) + ", but continuing...");
-                    // 연결 문제가 있어도 계속 시도
+                    // 연결 문제가 있어도 계속 시도 (로그 제거)
                     continue;
                 }
                 network->LogToFile("[Error] Receive failed: " + std::to_string(error));
@@ -218,6 +217,12 @@ DWORD WINAPI NetworkManager::NetworkThread(LPVOID arg) {
                     continue;
                 }
                 continue;
+            }
+            
+            // 수신된 데이터 로그 (디버깅용) - 빈도 감소
+            static int packetCount = 0;
+            if (++packetCount % 50 == 0) { // 50개 패킷마다 로그 (로그 부하 감소)
+                network->LogToFile("[Network] Received " + std::to_string(recvBytes) + " bytes");
             }
 
             if (recvBytes > sizeof(network->m_recvBuffer)) {
@@ -567,42 +572,22 @@ void NetworkManager::ProcessPacket(char* buffer) {
                 LogToFile("[Tiger] Successfully stored tiger info for ID: " + std::to_string(tigerSpawnPkt->tigerID));
                 
                 // Scene에 Tiger 생성 요청
-                if (m_scene) {
-                    char logBuffer[256];
-                    sprintf_s(logBuffer, "[Tiger] Attempting to create tiger in scene - ID: %d, Position: (%.2f, %.2f, %.2f)", 
-                        tigerSpawnPkt->tigerID, tigerSpawnPkt->x, tigerSpawnPkt->y, tigerSpawnPkt->z);
-                    LogToFile(logBuffer);
-                    
-                    if (m_scene->GetDevice() == nullptr) {
-                        LogToFile("[Error] Device is null before CreateTigerObject");
-                        break;
-                    }
-                    
+                if (m_scene && m_scene->GetDevice() != nullptr) {
                     try {
                         m_scene->CreateTigerObject(tigerSpawnPkt->tigerID, tigerSpawnPkt->x, tigerSpawnPkt->y, tigerSpawnPkt->z, m_scene->GetDevice());
-                        LogToFile("[Tiger] CreateTigerObject call completed successfully");
-                    }
-                    catch (const std::exception& e) {
-                        LogToFile("[Error] Exception in CreateTigerObject: " + std::string(e.what()));
-                        // 예외가 발생해도 클라이언트는 계속 실행
                     }
                     catch (...) {
-                        LogToFile("[Error] Unknown exception in CreateTigerObject");
                         // 예외가 발생해도 클라이언트는 계속 실행
                     }
-                } else {
-                    LogToFile("[Error] Scene is null, cannot create tiger object");
                 }
                 break;
             }
             
             case PACKET_TIGER_UPDATE: {
                 PacketTigerUpdate* tigerUpdatePkt = (PacketTigerUpdate*)buffer;
-                LogToFile("[Tiger] Received update for tiger ID: " + std::to_string(tigerUpdatePkt->tigerID));
                 
                 // 로그인 상태 확인
                 if (!m_isLoggedIn) {
-                    LogToFile("[Tiger] Ignoring tiger update packet - not logged in yet");
                     break;
                 }
                 
@@ -617,19 +602,34 @@ void NetworkManager::ProcessPacket(char* buffer) {
                     if (m_scene) {
                         try {
                             m_scene->UpdateTigerObject(tigerUpdatePkt->tigerID, tigerUpdatePkt->x, tigerUpdatePkt->y, tigerUpdatePkt->z, tigerUpdatePkt->rotY);
-                            LogToFile("[Tiger] Updated tiger object with ID: " + std::to_string(tigerUpdatePkt->tigerID));
-                        }
-                        catch (const std::exception& e) {
-                            LogToFile("[Error] Exception in UpdateTigerObject: " + std::string(e.what()));
-                            // 예외가 발생해도 클라이언트는 계속 실행
                         }
                         catch (...) {
-                            LogToFile("[Error] Unknown exception in UpdateTigerObject");
                             // 예외가 발생해도 클라이언트는 계속 실행
                         }
                     }
-                } else {
-                    LogToFile("[Tiger] Received update for non-spawned tiger ID: " + std::to_string(tigerUpdatePkt->tigerID) + ", ignoring");
+                }
+                break;
+            }
+
+            case PACKET_TREE_SPAWN: {
+                PacketTreeSpawn* treeSpawnPkt = (PacketTreeSpawn*)buffer;
+                
+                // 로그인 상태 확인 - 로그인 전에 받은 나무 스폰 패킷은 무시
+                if (!m_isLoggedIn) {
+                    break;
+                }
+                
+                // Scene에 Tree 생성 요청
+                if (m_scene && m_scene->GetDevice() != nullptr) {
+                    try {
+                        m_scene->CreateTreeObject(treeSpawnPkt->treeID, treeSpawnPkt->x, treeSpawnPkt->y, treeSpawnPkt->z, treeSpawnPkt->rotY, treeSpawnPkt->treeType, m_scene->GetDevice());
+                        
+                        // 나무 생성 후 짧은 지연 (렌더링 스레드에 시간 확보)
+                        Sleep(10);
+                    }
+                    catch (...) {
+                        // 예외가 발생해도 클라이언트는 계속 실행
+                    }
                 }
                 break;
             }
@@ -644,7 +644,7 @@ void NetworkManager::ProcessPacket(char* buffer) {
         // 예외를 상위로 전파하지 않고 여기서 처리
     }
 
-    LogToFile("[ProcessPacket] Finished processing packet type: " + std::to_string(header->type));
+    // 패킷 처리 완료 로그 제거
 }
 
 void NetworkManager::Shutdown() {
@@ -662,8 +662,19 @@ void NetworkManager::Shutdown() {
 }
 
 void NetworkManager::LogToFile(const std::string& message) {
-    // 로그 기록 완전 비활성화 (클라이언트 안정성 향상)
-    return;
+    // 로그 기능 다시 활성화 (디버깅을 위해)
+    std::lock_guard<std::mutex> lock(m_logMutex);
+    if (m_logFile.is_open()) {
+        time_t now = time(0);
+        tm ltm;
+        localtime_s(&ltm, &now);
+        
+        char timeStr[20];
+        sprintf_s(timeStr, "[%02d:%02d:%02d] ", ltm.tm_hour, ltm.tm_min, ltm.tm_sec);
+        
+        m_logFile << timeStr << message << std::endl;
+        m_logFile.flush(); // 즉시 파일에 쓰기
+    }
 }
 
 void NetworkManager::Update(GameTimer& gTimer, Scene* scene) {

@@ -9,6 +9,7 @@
 GameServer::GameServer()
     : m_nextClientID(1)
     , m_nextTigerID(1)
+    , m_nextTreeID(1)
     , m_isRunning(false)
     , m_hIOCP(NULL)
     , m_listenSocket(INVALID_SOCKET)
@@ -60,6 +61,7 @@ bool GameServer::Initialize(int port) {
     }
 
     InitializeTigers();
+    InitializeTrees();
     return true;
 }
 
@@ -133,20 +135,21 @@ DWORD GameServer::WorkerThread() {
             
             // 연결 관련 에러인 경우에도 연결을 유지 (최대한 관대하게)
             if (error == WSAENOTSOCK || error == WSAECONNRESET || error == WSAECONNABORTED || error == WSAENETDOWN) {
-                std::cout << "[Warning] Connection issue detected for client " << clientID << " (Error: " << error << "), but keeping connection..." << std::endl;
-                
                 // 클라이언트가 존재하는지 확인
                 auto clientIt = m_clients.find(clientID);
                 if (clientIt != m_clients.end()) {
                     // 연결 에러 카운트만 증가하고 연결은 유지
                     clientIt->second.connectionErrorCount++;
-                    std::cout << "[Info] Client " << clientID << " connection error count: " << clientIt->second.connectionErrorCount << std::endl;
-                } else {
-                    std::cout << "  -> Client " << clientID << " not found in client list" << std::endl;
+                    
+                    // 에러 카운트가 너무 많으면 연결 제거
+                    if (clientIt->second.connectionErrorCount > 10) {
+                        std::cout << "[Warning] Client " << clientID << " has too many connection errors, removing" << std::endl;
+                        closesocket(clientIt->second.socket);
+                        m_clients.erase(clientIt);
+                        delete ioContext;
+                        continue;
+                    }
                 }
-            } else {
-                // 일시적인 에러는 무시하고 계속 시도
-                std::cout << "[Warning] GetQueuedCompletionStatus failed with temporary error: " << error << " for client " << clientID << std::endl;
             }
             
             delete ioContext;
@@ -442,7 +445,10 @@ void GameServer::ProcessSinglePacket(char* buffer, int clientID, int packetSize)
             
             std::cout << "[ClientReady] Completed sending all tiger spawn packets to client " << clientID << std::endl;
             
-            // 모든 호랑이 스폰 패킷 전송 완료 후 짧은 지연 (클라이언트 처리 시간 확보)
+            // 나무 위치 정보 전송
+            SendTreePositions(clientID);
+            
+            // 모든 패킷 전송 완료 후 짧은 지연 (클라이언트 처리 시간 확보)
             Sleep(100);  // 100ms로 줄임
             
             // 클라이언트 상태 최종 확인
@@ -690,16 +696,32 @@ void GameServer::InitializeTigers() {
     std::cout << "[InitializeTigers] Note: Tiger spawn packets will be sent when clients log in" << std::endl;
 }
 
-void GameServer::UpdateTigers(float deltaTime) {
-    m_tigerUpdateTimer += deltaTime;
-    if (m_tigerUpdateTimer < 0.1f) return; // 100ms마다 업데이트 (더 부드러운 움직임)
-
-    for (auto& [id, tiger] : m_tigers) {
-        UpdateTigerBehavior(tiger, deltaTime); // deltaTime 사용으로 수정
+void GameServer::InitializeTrees() {
+    std::cout << "\n[InitializeTrees] Starting tree position initialization..." << std::endl;
+    
+    // 플레이어 주변에 20개의 나무만 생성
+    const int TREE_COUNT = 20;
+    const float SPAWN_RADIUS = 300.0f; // 플레이어 주변 300 유닛 반경
+    
+    for (int i = 0; i < TREE_COUNT; ++i) {
+        TreeInfo tree;
+        tree.treeID = m_nextTreeID++;
+        
+        // 플레이어 주변 랜덤 위치 생성
+        float angle = GetRandomFloat(0.0f, 360.0f) * (3.141592f / 180.0f);
+        float distance = GetRandomFloat(50.0f, SPAWN_RADIUS);
+        
+        tree.x = 500.0f + cos(angle) * distance; // 플레이어 시작 위치 주변
+        tree.y = 0.0f;
+        tree.z = 500.0f + sin(angle) * distance;
+        tree.rotY = GetRandomFloat(0.0f, 360.0f);
+        tree.treeType = 0; // long_tree
+        
+        m_trees[tree.treeID] = tree;
     }
-
-    BroadcastTigerUpdates();
-    m_tigerUpdateTimer = 0.0f;
+    
+    std::cout << "[InitializeTrees] Completed. Total tree positions created: " << m_trees.size() << std::endl;
+    std::cout << "[InitializeTrees] Note: Tree positions will be sent when clients log in" << std::endl;
 }
 
 void GameServer::UpdateTigerBehavior(TigerInfo& tiger, float deltaTime) {
@@ -745,6 +767,18 @@ void GameServer::UpdateTigerBehavior(TigerInfo& tiger, float deltaTime) {
     }
 }
 
+void GameServer::UpdateTigers(float deltaTime) {
+    m_tigerUpdateTimer += deltaTime;
+    if (m_tigerUpdateTimer < 0.15f) return; // 150ms마다 업데이트 (더 부드러운 움직임)
+
+    for (auto& [id, tiger] : m_tigers) {
+        UpdateTigerBehavior(tiger, deltaTime); // deltaTime 사용으로 수정
+    }
+
+    BroadcastTigerUpdates();
+    m_tigerUpdateTimer = 0.0f;
+}
+
 void GameServer::BroadcastTigerUpdates() {
     // 로그인된 클라이언트가 없으면 업데이트 전송하지 않음
     int loggedInCount = 0;
@@ -755,14 +789,14 @@ void GameServer::BroadcastTigerUpdates() {
     }
     
     if (loggedInCount == 0) {
-        return;  // 로그인된 클라이언트가 없으면 업데이트 전송하지 않음
+        return;
     }
     
-    // 호랑이 업데이트 전송 (더 자주 전송)
+    // 호랑이 업데이트 전송
     static int updateCounter = 0;
     updateCounter++;
     
-    // 2번 중 1번 업데이트 전송 (더 부드러운 움직임)
+    // 2번 중 1번 업데이트 전송
     if (updateCounter % 2 != 0) {
         return;
     }
@@ -779,6 +813,48 @@ void GameServer::BroadcastTigerUpdates() {
         
         BroadcastPacket(&updatePacket, sizeof(updatePacket));
     }
+}
+
+void GameServer::SendTreePositions(int clientID) {
+    std::cout << "[Tree] Starting to send tree positions to client " << clientID << std::endl;
+    std::cout << "[Tree] Total trees to send: " << m_trees.size() << std::endl;
+    
+    // 클라이언트 소켓 상태 확인
+    if (m_clients[clientID].socket == INVALID_SOCKET) {
+        std::cout << "[Tree] Client socket is invalid" << std::endl;
+        return;
+    }
+    
+    int sentCount = 0;
+    for (const auto& [treeID, tree] : m_trees) {
+        // 클라이언트 상태 재확인
+        if (m_clients.find(clientID) == m_clients.end() || 
+            m_clients[clientID].socket == INVALID_SOCKET) {
+            std::cout << "[Tree] Client disconnected during tree send" << std::endl;
+            break;
+        }
+        
+        PacketTreeSpawn treePacket;
+        treePacket.header.type = PACKET_TREE_SPAWN;
+        treePacket.header.size = sizeof(PacketTreeSpawn);
+        treePacket.treeID = tree.treeID;
+        treePacket.x = tree.x;
+        treePacket.y = tree.y;
+        treePacket.z = tree.z;
+        treePacket.rotY = tree.rotY;
+        treePacket.treeType = tree.treeType;
+        
+        if (!SendPacket(m_clients[clientID].socket, &treePacket, sizeof(PacketTreeSpawn))) {
+            std::cout << "[Tree] Failed to send tree packet for ID: " << tree.treeID << std::endl;
+            break;
+        }
+        
+        sentCount++;
+        // 각 나무 위치 전송 사이에 지연 (클라이언트 처리 시간 확보)
+        Sleep(20);  // 20ms로 증가
+    }
+    
+    std::cout << "[Tree] Completed sending " << sentCount << " tree positions to client " << clientID << std::endl;
 }
 
 float GameServer::GetRandomFloat(float min, float max) {

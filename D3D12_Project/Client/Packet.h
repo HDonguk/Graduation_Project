@@ -13,10 +13,11 @@ enum PacketType {
     PACKET_PLAYER_SPAWN = 2,
     PACKET_TIGER_SPAWN = 3,    // 호랑이 스폰 패킷
     PACKET_TIGER_UPDATE = 4,   // 호랑이 업데이트 패킷
-    PACKET_LOGIN_REQUEST = 5,  // 로그인 요청
-    PACKET_LOGIN_RESPONSE = 6, // 로그인 응답
-    PACKET_PLAYER_DISCONNECT = 7, // 플레이어 연결 해제
-    PACKET_CLIENT_READY = 8    // 클라이언트 준비 완료 신호
+    PACKET_TREE_SPAWN = 5,     // 나무 스폰 패킷
+    PACKET_LOGIN_REQUEST = 6,  // 로그인 요청
+    PACKET_LOGIN_RESPONSE = 7, // 로그인 응답
+    PACKET_PLAYER_DISCONNECT = 8, // 플레이어 연결 해제
+    PACKET_CLIENT_READY = 9    // 클라이언트 준비 완료 신호
 };
 
 struct PacketPlayerUpdate {
@@ -43,6 +44,14 @@ struct PacketTigerUpdate {
     int tigerID;
     float x, y, z;
     float rotY;
+};
+
+struct PacketTreeSpawn {
+    PacketHeader header;
+    int treeID;
+    float x, y, z;
+    float rotY;
+    int treeType;  // 0: long_tree, 1: normal_tree
 };
 
 struct PacketLoginRequest {

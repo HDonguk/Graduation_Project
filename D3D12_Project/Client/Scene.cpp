@@ -202,22 +202,23 @@ void Scene::BuildObjects(ID3D12Device* device)
     //objectPtr->AddComponent(Mesh{ subMeshData.at("house_1218_attach_fix.fbx") , objectPtr });
     //objectPtr->AddComponent(Texture{ m_subTextureData.at(L"PP_Color_Palette"), objectPtr });
 
-    int repeat{ 17 };
-    for (int i = 0; i < repeat; ++i) {
-        for (int j = 0; j < repeat; ++j) {
-            wstring objectName = L"TreeObject" + to_wstring(j + (repeat * i));
-            AddObj(objectName, TreeObject{ this });
-            objectPtr = &GetObj<TreeObject>(objectName);
-            objectPtr->AddComponent(Position{ 100.f + 150.f * j, 0.f, 100.f + 150.f * i, 1.f, objectPtr });
-            objectPtr->AddComponent(Velocity{ 0.f, 0.f, 0.f, 0.f, objectPtr });
-            objectPtr->AddComponent(Rotation{ 0.0f, 0.0f, 0.0f, 0.0f, objectPtr });
-            objectPtr->AddComponent(Rotate{ 0.0f, 0.0f, 0.0f, 0.0f, objectPtr });
-            objectPtr->AddComponent(Scale{ 20.f, objectPtr });
-            objectPtr->AddComponent(Mesh{ subMeshData.at("long_tree.fbx") , objectPtr });
-            objectPtr->AddComponent(Texture{ m_subTextureData.at(L"longTree"), objectPtr });
-            objectPtr->AddComponent(Collider{ 0.f, 0.f, 0.f, 3.f, 50.f, 3.f, objectPtr });
-        }
-    }
+    // 나무는 서버에서 위치 정보를 받아서 생성하므로 여기서는 생성하지 않음
+    // int repeat{ 17 };
+    // for (int i = 0; i < repeat; ++i) {
+    //     for (int j = 0; j < repeat; ++j) {
+    //         wstring objectName = L"TreeObject" + to_wstring(j + (repeat * i));
+    //         AddObj(objectName, TreeObject{ this });
+    //         objectPtr = &GetObj<TreeObject>(objectName);
+    //         objectPtr->AddComponent(Position{ 100.f + 150.f * j, 0.f, 100.f + 150.f * i, 1.f, objectPtr });
+    //         objectPtr->AddComponent(Velocity{ 0.f, 0.f, 0.f, 0.f, objectPtr });
+    //         objectPtr->AddComponent(Rotation{ 0.0f, 0.0f, 0.0f, 0.0f, objectPtr });
+    //         objectPtr->AddComponent(Rotate{ 0.0f, 0.0f, 0.0f, 0.0f, objectPtr });
+    //         objectPtr->AddComponent(Scale{ 20.f, objectPtr });
+    //         objectPtr->AddComponent(Mesh{ subMeshData.at("long_tree.fbx") , objectPtr });
+    //         objectPtr->AddComponent(Texture{ m_subTextureData.at(L"longTree"), objectPtr });
+    //         objectPtr->AddComponent(Collider{ 0.f, 0.f, 0.f, 3.f, 50.f, 3.f, objectPtr });
+    //     }
+    // }
 }
 
 void Scene::BuildRootSignature(ID3D12Device* device)
@@ -1140,6 +1141,68 @@ void Scene::RenderObjects(ID3D12Device* device, ID3D12GraphicsCommandList* comma
     // 기존 오브젝트 렌더링
     for (auto& [key, value] : m_objects) {
         visit([device, commandList](auto& arg) {arg.OnRender(device, commandList); }, value);
+    }
+}
+
+void Scene::CreateTreeObject(int treeID, float x, float y, float z, float rotY, int treeType, ID3D12Device* device) {
+    if (!device) return;
+
+    wstring objectName = L"NetworkTree_" + std::to_wstring(treeID);
+    
+    try {
+        // 기존 Tree가 있다면 제거
+        if (m_objects.find(objectName) != m_objects.end()) {
+            m_objects.erase(objectName);
+        }
+        
+        // 객체 수 제한 (메모리 보호)
+        if (m_objects.size() > 400) return;
+        
+        // 리소스 매니저 확인
+        if (!m_resourceManager) return;
+        
+        // 필요한 리소스들이 존재하는지 확인
+        auto& subMeshData = m_resourceManager->GetSubMeshData();
+        if (subMeshData.find("long_tree.fbx") == subMeshData.end()) return;
+        if (m_subTextureData.find(L"longTree") == m_subTextureData.end()) return;
+        
+        AddObj(objectName, TreeObject(this));
+        auto& tree = GetObj<TreeObject>(objectName);
+        
+        // 지형 높이 계산
+        float terrainHeight = CalculateTerrainHeight(x, z);
+        
+        // 컴포넌트 추가
+        tree.AddComponent<Position>(Position{ x, terrainHeight, z, 1.0f, &tree });
+        tree.AddComponent<Rotation>(Rotation{ 0.0f, rotY, 0.0f, 0.0f, &tree });
+        tree.AddComponent<Scale>(Scale{ 1.0f, &tree });
+        
+        // Tree 타입에 따라 다른 메시 사용
+        if (treeType == 0) {
+            tree.AddComponent<Mesh>(Mesh{ m_resourceManager->GetSubMeshData().at("long_tree.fbx"), &tree });
+        } else {
+            tree.AddComponent<Mesh>(Mesh{ m_resourceManager->GetSubMeshData().at("long_tree.fbx"), &tree });
+        }
+        
+        tree.AddComponent<Texture>(Texture{ m_subTextureData.at(L"longTree"), &tree });
+        
+        // 상수 버퍼 생성
+        tree.BuildConstantBuffer(device);
+        
+        // 나무 생성 완료 후 메모리 사용량 체크 (20개마다)
+        if (treeID % 20 == 0) {
+            PROCESS_MEMORY_COUNTERS_EX pmc;
+            if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+                float memoryUsageMB = static_cast<float>(pmc.WorkingSetSize) / (1024.0f * 1024.0f);
+                NetworkManager::LogToFile("[Memory] After creating " + std::to_string(treeID) + " trees: " + std::to_string(memoryUsageMB) + " MB");
+            }
+        }
+        
+    } catch (...) {
+        // 예외 발생 시 기존 객체 정리 시도
+        if (m_objects.find(objectName) != m_objects.end()) {
+            m_objects.erase(objectName);
+        }
     }
 }
 

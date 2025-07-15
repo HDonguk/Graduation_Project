@@ -24,6 +24,7 @@ private:
     static constexpr int MAX_CLIENTS = 2;
     static constexpr int MAX_PACKET_SIZE = 1024;
     static constexpr int MAX_TIGERS = 5;  // 최대 호랑이 수
+    static constexpr int MAX_TREES = 289;  // 17x17 나무
 
     struct ClientInfo {
         SOCKET socket;
@@ -48,6 +49,13 @@ private:
         bool isChasing;         // 플레이어 추적 여부
     };
 
+    struct TreeInfo {
+        int treeID;
+        float x, y, z;
+        float rotY;
+        int treeType;  // 0: long_tree, 1: normal_tree
+    };
+
     struct IOContext {
         OVERLAPPED overlapped;
         WSABUF wsaBuf;
@@ -60,8 +68,10 @@ private:
     HANDLE m_hIOCP;
     int m_nextClientID;
     int m_nextTigerID;
+    int m_nextTreeID;
     std::unordered_map<int, ClientInfo> m_clients;
     std::unordered_map<int, TigerInfo> m_tigers;
+    std::unordered_map<int, TreeInfo> m_trees;
     SOCKET m_listenSocket;
     std::vector<HANDLE> m_workerThreads;
     bool m_isRunning;
@@ -89,4 +99,8 @@ private:
     float GetRandomFloat(float min, float max);
     bool IsPlayerNearby(const TigerInfo& tiger, float radius);
     void GetNearestPlayerPosition(const TigerInfo& tiger, float& outX, float& outZ);
+    
+    // 나무 관련 메서드
+    void InitializeTrees();
+    void SendTreePositions(int clientID);
 }; 
