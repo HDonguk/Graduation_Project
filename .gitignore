@@ -9,21 +9,21 @@
 *.sln.docstates
 *.userprefs
 
-# Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-[Ww][Ii][Nn]32/
-[Aa][Rr][Mm]/
-[Aa][Rr][Mm]64/
-bld/
-[Bb]in/
-[Oo]bj/
-[Ll]og/
-[Ll]ogs/
+# Build results (중요한 파일들은 포함)
+# [Dd]ebug/ - 주석 처리하여 디버그 빌드 결과물 포함
+# [Dd]ebugPublic/ - 주석 처리하여 디버그 공개 빌드 결과물 포함
+# [Rr]elease/ - 주석 처리하여 릴리즈 빌드 결과물 포함
+# [Rr]eleases/ - 주석 처리하여 릴리즈 빌드 결과물 포함
+# x64/ - 주석 처리하여 x64 빌드 결과물 포함 (실행 파일, 텍스처, 모델 등)
+# x86/ - 주석 처리하여 x86 빌드 결과물 포함
+# [Ww][Ii][Nn]32/ - 주석 처리하여 Win32 빌드 결과물 포함
+# [Aa][Rr][Mm]/ - 주석 처리하여 ARM 빌드 결과물 포함
+# [Aa][Rr][Mm]64/ - 주석 처리하여 ARM64 빌드 결과물 포함
+# bld/ - 주석 처리하여 빌드 결과물 포함
+# [Bb]in/ - 주석 처리하여 bin 폴더 포함
+# [Oo]bj/ - 주석 처리하여 obj 폴더 포함
+# [Ll]og/ - 주석 처리하여 로그 폴더 포함
+# [Ll]ogs/ - 주석 처리하여 로그 폴더 포함
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -443,9 +443,9 @@ logs/
 *.flv
 *.mkv
 
-# Executable files
-*.exe
-*.dll
+# Executable files (중요한 파일들은 포함)
+# *.exe - 주석 처리하여 실행 파일 포함
+# *.dll - 주석 처리하여 DLL 파일 포함
 # *.lib - 주석 처리하여 DirectXTex.lib 등 중요한 라이브러리 파일 포함
 *.so
 *.dylib
