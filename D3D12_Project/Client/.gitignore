@@ -1,3 +1,37 @@
 D3D12_Project/
 *.fbm
 *.vs
+
+# 텍스트 파일 제외
+*.txt
+
+# 로그 파일들 제외
+logs/
+*.log
+
+# 임시 파일들 제외
+*.tmp
+*.temp
+
+# Visual Studio 관련 파일들 제외
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.db
+*.opendb
+*.VC.db
+*.VC.opendb
+
+# 빌드 결과물 제외
+x64/
+Debug/
+Release/
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.obj
+*.o
