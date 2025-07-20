@@ -446,7 +446,7 @@ logs/
 # Executable files
 *.exe
 *.dll
-*.lib
+# *.lib - 주석 처리하여 DirectXTex.lib 등 중요한 라이브러리 파일 포함
 *.so
 *.dylib
 
