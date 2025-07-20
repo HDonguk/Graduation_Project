@@ -373,7 +373,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 # Project specific files
-*.txt
+# *.txt - 주석 처리하여 모든 텍스트 파일 포함
 logs/
 *.log
 *.tmp

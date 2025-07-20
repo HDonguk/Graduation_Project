@@ -1,17 +1,6 @@
-D3D12_Project/
-*.fbm
+# D3D12_Project/ - 주석 처리하여 프로젝트 폴더 포함
+# *.fbm - 주석 처리하여 FBX 바이너리 매터리얼 파일 포함
 *.vs
-
-# 텍스트 파일 제외
-*.txt
-
-# 로그 파일들 제외
-logs/
-*.log
-
-# 임시 파일들 제외
-*.tmp
-*.temp
 
 # Visual Studio 관련 파일들 제외
 .vs/
@@ -35,3 +24,34 @@ Release/
 *.ilk
 *.obj
 *.o
+
+# 로그 파일들 제외 (특정 패턴만)
+logs/
+*.log
+network_log_*.txt
+
+# 임시 파일들 제외
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS 생성 파일들 제외
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE 특정 파일들 제외
+.vscode/
+.idea/
+
+# 특정 텍스트 파일만 제외 (설정 파일들은 유지)
+# *.txt - 주석 처리하여 모든 텍스트 파일 포함
+
+# 특정 서버 파일만 제외
+Server/Server/TextFile1.txt
