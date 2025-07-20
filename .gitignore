@@ -379,53 +379,53 @@ logs/
 *.tmp
 *.temp
 
-# D3D12 specific
-*.dds
-*.fbx
-*.obj
-*.mtl
-*.3ds
-*.max
-*.blend
-*.dae
-*.bvh
-*.csm
-*.dxf
-*.ifc
-*.iges
-*.lws
-*.lxo
-*.ma
-*.mb
-*.mesh
-*.mot
-*.ms3d
-*.ndo
-*.nff
-*.off
-*.ply
-*.q3o
-*.q3s
-*.raw
-*.smd
-*.stl
-*.ter
-*.uc
-*.vta
-*.x
-*.x3d
-*.xgl
-*.zgl
+# D3D12 specific - COMMENTED OUT TO ALLOW UPLOAD
+# *.dds
+# *.fbx
+# *.obj
+# *.mtl
+# *.3ds
+# *.max
+# *.blend
+# *.dae
+# *.bvh
+# *.csm
+# *.dxf
+# *.ifc
+# *.iges
+# *.lws
+# *.lxo
+# *.ma
+# *.mb
+# *.mesh
+# *.mot
+# *.ms3d
+# *.ndo
+# *.nff
+# *.off
+# *.ply
+# *.q3o
+# *.q3s
+# *.raw
+# *.smd
+# *.stl
+# *.ter
+# *.uc
+# *.vta
+# *.x
+# *.x3d
+# *.xgl
+# *.zgl
 
-# Texture files (keep only source files)
-*.dds
-*.tga
-*.bmp
-*.jpg
-*.jpeg
-*.png
-*.tiff
-*.tif
+# Texture files (keep only source files) - COMMENTED OUT TO ALLOW UPLOAD
+# *.dds
+# *.tga
+# *.bmp
+# *.jpg
+# *.jpeg
+# *.png
+# *.tiff
+# *.tif
 
 # Audio files
 *.wav
